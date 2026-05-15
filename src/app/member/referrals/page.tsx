@@ -9,9 +9,7 @@ interface Commission {
   commission_amount: number;
   created_at: string;
   user_id: string;
-  profiles: {
-    email: string;
-  };
+  trader_email?: string;
 }
 
 interface Profile {
@@ -50,23 +48,41 @@ export default function ReferralsPage() {
     
     setProfile(profileData);
     
-    // Get referral commissions earned
+    // Get referral commissions earned (without nested select)
     const { data: commissionsData } = await supabase
       .from('referral_commissions')
-      .select(`
-        id,
-        commission_amount,
-        created_at,
-        user_id,
-        profiles:user_id (email)
-      `)
+      .select('id, commission_amount, created_at, user_id')
       .eq('referrer_id', user.id)
       .order('created_at', { ascending: false });
     
     if (commissionsData) {
-      setCommissions(commissionsData);
-      const total = commissionsData.reduce((sum, c) => sum + (c.commission_amount || 0), 0);
-      setTotalEarnings(total);
+      // Get trader emails separately
+      const userIds = commissionsData.map(c => c.user_id);
+      
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, email')
+          .in('id', userIds);
+        
+        const emailMap = new Map();
+        profiles?.forEach(p => {
+          emailMap.set(p.id, p.email);
+        });
+        
+        const commissionsWithEmail = commissionsData.map(c => ({
+          ...c,
+          trader_email: emailMap.get(c.user_id) || 'Unknown'
+        }));
+        
+        setCommissions(commissionsWithEmail);
+        const total = commissionsWithEmail.reduce((sum, c) => sum + (c.commission_amount || 0), 0);
+        setTotalEarnings(total);
+      } else {
+        setCommissions(commissionsData);
+        const total = commissionsData.reduce((sum, c) => sum + (c.commission_amount || 0), 0);
+        setTotalEarnings(total);
+      }
     }
     
     // Get number of people referred
@@ -155,7 +171,7 @@ export default function ReferralsPage() {
                 {commissions.map((commission) => (
                   <tr key={commission.id} className="border-t">
                     <td className="p-3">
-                      {(commission.profiles as any)?.email || 'Unknown'}
+                      {commission.trader_email || 'Unknown'}
                     </td>
                     <td className="p-3 text-right text-green-600 font-medium">
                       ${(commission.commission_amount || 0).toFixed(2)}
