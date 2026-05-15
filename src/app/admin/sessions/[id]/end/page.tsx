@@ -40,51 +40,54 @@ export default function EndTradingPage() {
   }, []);
 
   async function loadSessionData() {
-    const supabase = createClient();
+  const supabase = createClient();
+  
+  // Get session
+  const { data: sessionData } = await supabase
+    .from('sessions')
+    .select('*')
+    .eq('id', sessionId)
+    .single();
+  
+  console.log('Session data:', sessionData);
+  setSession(sessionData);
+  
+  // Get commitments with profiles (note: profiles returns an array)
+  const { data: commitmentsData } = await supabase
+    .from('session_commitments')
+    .select(`
+      id,
+      user_id,
+      amount,
+      contribution_pct,
+      profiles:user_id (
+        full_name,
+        email
+      )
+    `)
+    .eq('session_id', sessionId)
+    .eq('status', 'active');
+  
+  console.log('Commitments raw:', commitmentsData);
+  
+  if (commitmentsData && commitmentsData.length > 0) {
+    // Fix: profiles is an array, take the first item
+    const formattedCommitments = commitmentsData.map(c => ({
+      id: c.id,
+      user_id: c.user_id,
+      amount: c.amount,
+      contribution_pct: c.contribution_pct || 0,
+      profile: Array.isArray(c.profiles) && c.profiles.length > 0 
+        ? c.profiles[0] 
+        : { full_name: null, email: 'Unknown' }
+    }));
     
-    // Get session
-    const { data: sessionData } = await supabase
-      .from('sessions')
-      .select('*')
-      .eq('id', sessionId)
-      .single();
-    
-    console.log('Session data:', sessionData);
-    setSession(sessionData);
-    
-    // Get commitments with profiles
-    const { data: commitmentsData } = await supabase
-      .from('session_commitments')
-      .select(`
-        id,
-        user_id,
-        amount,
-        contribution_pct,
-        profiles:user_id (
-          full_name,
-          email
-        )
-      `)
-      .eq('session_id', sessionId)
-      .eq('status', 'active');
-    
-    console.log('Commitments raw:', commitmentsData);
-    
-    if (commitmentsData && commitmentsData.length > 0) {
-      const formattedCommitments = commitmentsData.map(c => ({
-        id: c.id,
-        user_id: c.user_id,
-        amount: c.amount,
-        contribution_pct: c.contribution_pct || 0,
-        profile: c.profiles || { full_name: null, email: 'Unknown' }
-      }));
-      
-      console.log('Formatted commitments:', formattedCommitments);
-      setCommitments(formattedCommitments);
-    }
-    
-    setLoading(false);
+    console.log('Formatted commitments:', formattedCommitments);
+    setCommitments(formattedCommitments);
   }
+  
+  setLoading(false);
+}
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
