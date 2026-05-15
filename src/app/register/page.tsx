@@ -1,10 +1,11 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 
-export default function RegisterPage() {
+function RegisterForm() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const referralCode = searchParams.get('ref');
@@ -23,7 +24,6 @@ export default function RegisterPage() {
     setLoading(true);
     setError('');
     
-    // Validation
     if (!fullName.trim()) {
       setError('Full name is required');
       setLoading(false);
@@ -188,5 +188,13 @@ export default function RegisterPage() {
         </a>
       </p>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={<div className="flex justify-center items-center h-64">Loading...</div>}>
+      <RegisterForm />
+    </Suspense>
   );
 }
