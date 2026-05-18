@@ -36,12 +36,7 @@ export function Sidebar() {
           Deposits
         </Link>
 
-        <Link
-          href="/member/withdrawals"
-          className="block rounded-md px-4 py-2 hover:bg-muted"
-        >
-          Withdrawals
-        </Link>
+       
         <Link
           href="/member/sessions"
           className="block rounded-md px-4 py-2 hover:bg-muted"
@@ -53,6 +48,19 @@ export function Sidebar() {
   className="block rounded-md px-4 py-2 hover:bg-muted"
 >
   My Investments
+</Link>
+<Link
+  href="/member/withdrawal-options"
+  className="block rounded-md px-4 py-2 hover:bg-muted"
+>
+  Withdrawal Options
+</Link>
+
+<Link
+  href="/member/withdraw"
+  className="block rounded-md px-4 py-2 hover:bg-muted"
+>
+  Withdraw Funds
 </Link>
 <Link
   href="/member/referrals"

@@ -44,6 +44,18 @@ export function AdminSidebar() {
         >
           Sessions
         </Link>
+        <Link
+  href="/admin/withdrawals"
+  className="block rounded-md px-4 py-2 hover:bg-muted"
+>
+  Withdrawals
+</Link>
+<Link
+  href="/admin/exchange-rate"
+  className="block rounded-md px-4 py-2 hover:bg-muted"
+>
+  Exchange Rate
+</Link>
       </nav>
     </aside>
   );
