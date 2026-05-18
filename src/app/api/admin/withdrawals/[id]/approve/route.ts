@@ -9,8 +9,10 @@ export async function POST(
     const supabase = createAdminClient();
     const { id } = await params;
     
-    // Update withdrawal status
-    await supabase
+    console.log('Approving withdrawal:', id);
+    
+    // Update withdrawal status to approved
+    const { error: updateError } = await supabase
       .from('withdrawals')
       .update({
         status: 'approved',
@@ -18,8 +20,21 @@ export async function POST(
       })
       .eq('id', id);
     
+    if (updateError) {
+      console.error('Approve error:', updateError);
+      return NextResponse.json(
+        { error: updateError.message },
+        { status: 500 }
+      );
+    }
+    
     return NextResponse.redirect(new URL('/admin/withdrawals', request.url));
+    
   } catch (error) {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    console.error('Approve withdrawal error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
   }
 }
