@@ -181,7 +181,7 @@ export default async function MemberDashboardPage() {
                     <td className="p-3 text-sm text-muted-foreground">
                       {new Date(commitment.committed_at).toLocaleDateString()}
                     </td>
-                  </table>
+                  </tr>
                 ))}
               </tbody>
             </table>
