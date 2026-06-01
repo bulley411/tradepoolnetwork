@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin';
+import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { randomBytes } from 'crypto';
 
@@ -9,12 +10,30 @@ export async function POST(
   try {
     const { id } = await params;
     
-    const adminSupabase = createAdminClient();
+    // Use regular server client to get the current session
+    const supabase = await createClient();
+    const { data: { user: adminUser }, error: authError } = await supabase.auth.getUser();
     
-    // Verify admin is authenticated
-    const { data: { user: adminUser } } = await adminSupabase.auth.getUser();
-    if (!adminUser) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (authError || !adminUser) {
+      console.error('Auth error:', authError);
+      return NextResponse.json({ error: 'Unauthorized - Please login as admin first' }, { status: 401 });
+    }
+    
+    // Verify admin role using admin client
+    const adminSupabase = createAdminClient();
+    const { data: adminProfile, error: profileError } = await adminSupabase
+      .from('profiles')
+      .select('role')
+      .eq('id', adminUser.id)
+      .single();
+    
+    if (profileError || !adminProfile) {
+      console.error('Profile error:', profileError);
+      return NextResponse.json({ error: 'Admin profile not found' }, { status: 403 });
+    }
+    
+    if (adminProfile.role !== 'admin' && adminProfile.role !== 'super_admin') {
+      return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
     }
     
     // Check if target user exists and is active
@@ -35,7 +54,7 @@ export async function POST(
     // Generate a unique session token
     const sessionToken = randomBytes(32).toString('hex');
     
-    // Create impersonation session
+    // Create or update impersonation session in database
     const { error: insertError } = await adminSupabase
       .from('impersonation_sessions')
       .insert({
@@ -43,6 +62,7 @@ export async function POST(
         target_user_id: id,
         session_token: sessionToken,
         expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        is_active: true,
       });
     
     if (insertError) {
@@ -50,13 +70,13 @@ export async function POST(
       return NextResponse.json({ error: 'Failed to create impersonation session' }, { status: 500 });
     }
     
-    // Create response with impersonation cookie
+    // Create response with redirect to member dashboard
     const response = NextResponse.redirect(new URL('/member/dashboard', request.url));
     
-    // Set impersonation cookie (this will be used by middleware to determine which user to show)
+    // Set impersonation cookie
     response.cookies.set('impersonate_token', sessionToken, {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
       maxAge: 24 * 60 * 60, // 24 hours

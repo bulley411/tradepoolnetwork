@@ -8,15 +8,19 @@ export async function POST(request: NextRequest) {
   const impersonateToken = request.cookies.get('impersonate_token')?.value;
   
   if (impersonateToken) {
-    const supabase = createAdminClient();
-    // Deactivate the impersonation session
-    await supabase
-      .from('impersonation_sessions')
-      .update({ is_active: false })
-      .eq('session_token', impersonateToken);
+    try {
+      const supabase = createAdminClient();
+      // Deactivate the impersonation session
+      await supabase
+        .from('impersonation_sessions')
+        .update({ is_active: false })
+        .eq('session_token', impersonateToken);
+    } catch (error) {
+      console.error('Error deactivating impersonation session:', error);
+    }
   }
   
-  // Clear impersonation cookies
+  // Clear impersonation cookie
   response.cookies.delete('impersonate_token');
   
   return response;

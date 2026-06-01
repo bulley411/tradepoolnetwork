@@ -81,11 +81,11 @@ export default async function UserDetailPage({
           <p className="text-muted-foreground">{user.email}</p>
         </div>
         <div className="flex gap-2">
-          <form action={`/api/admin/users/${id}/impersonate`} method="POST">
-            <button className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
-              Login as User
-            </button>
-          </form>
+       <form action={`/api/admin/users/${user.id}/impersonate`} method="POST">
+  <button className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
+    Login as User
+  </button>
+</form>
         </div>
       </div>
       
