@@ -4,6 +4,7 @@ import { getMyActiveCommitments, getMySettledSessions } from "@/services/session
 import { createClient } from "@/lib/supabase/server";
 import { getUSDToNGNRate, convertUSDtoNGN } from "@/services/exchange-rate-service";
 import Link from "next/link";
+import { headers } from "next/headers";
 
 export default async function MemberDashboardPage() {
   const supabase = await createClient();
@@ -11,6 +12,11 @@ export default async function MemberDashboardPage() {
   const wallet = await getCurrentWallet();
   const { commitments } = await getMyActiveCommitments();
   const { history } = await getMySettledSessions();
+  
+  // Check if impersonation is active from middleware header
+  const headersList = await headers();
+  const isImpersonating = headersList.get("x-impersonate-active") === "true";
+  const impersonatedUserId = headersList.get("x-impersonate-user");
 
   const totalLocked = commitments?.reduce((sum, c) => sum + (c.amount || 0), 0) || 0;
   
@@ -29,10 +35,39 @@ export default async function MemberDashboardPage() {
 
   return (
     <div className="space-y-6">
+      {/* Impersonation Banner - Shows when admin is impersonating */}
+      {isImpersonating && (
+        <div className="bg-orange-50 border border-orange-400 rounded-lg p-4">
+          <div className="flex justify-between items-start gap-3">
+            <div className="flex items-start gap-3">
+              <span className="text-orange-600 text-xl">🔓</span>
+              <div>
+                <h3 className="font-semibold text-orange-800">Admin Impersonation Mode</h3>
+                <p className="text-sm text-orange-700">
+                  An administrator is viewing your account. Any actions taken will affect your real account.
+                </p>
+                <p className="text-xs text-orange-600 mt-1">
+                  Impersonated User ID: {impersonatedUserId?.slice(0, 8)}...
+                </p>
+              </div>
+            </div>
+            <form action="/api/admin/users/stop-impersonate" method="POST">
+              <button 
+                type="submit"
+                className="px-3 py-1 bg-orange-600 text-white text-sm rounded hover:bg-orange-700 transition-colors"
+              >
+                Exit Impersonation
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Withdrawal Options Warning */}
       {!hasWithdrawalOptions && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <div className="flex items-start gap-3">
-            <span className="text-yellow-600 text-xl">Warning</span>
+            <span className="text-yellow-600 text-xl">⚠️</span>
             <div>
               <h3 className="font-semibold text-yellow-800">Withdrawal Options Not Set</h3>
               <p className="text-sm text-yellow-700">
@@ -49,13 +84,16 @@ export default async function MemberDashboardPage() {
         </div>
       )}
 
+      {/* Welcome Section */}
       <div>
         <h1 className="text-3xl font-bold">
           Welcome back{profile?.full_name ? `, ${profile.full_name}` : ''}
+          {isImpersonating && <span className="text-orange-600 text-lg ml-2">(Admin View)</span>}
         </h1>
         <p className="text-muted-foreground">{profile?.email}</p>
       </div>
 
+      {/* Wallet Summary Cards */}
       <div className="grid gap-4 md:grid-cols-4">
         <div className="rounded-xl border p-6">
           <h2 className="text-sm text-muted-foreground">Main Balance</h2>
@@ -81,6 +119,7 @@ export default async function MemberDashboardPage() {
         </div>
       </div>
 
+      {/* Naira Equivalent Card */}
       <div className="rounded-xl border p-6 bg-gradient-to-r from-green-50 to-blue-50">
         <h2 className="text-sm text-muted-foreground">Naira Equivalent (NGN)</h2>
         <p className="mt-2 text-3xl font-bold text-green-600">
@@ -96,6 +135,7 @@ export default async function MemberDashboardPage() {
         </div>
       </div>
 
+      {/* Active Commitments Section */}
       {commitments && commitments.length > 0 && (
         <div className="rounded-xl border overflow-hidden">
           <div className="border-b px-6 py-4">
@@ -141,7 +181,7 @@ export default async function MemberDashboardPage() {
                     <td className="p-3 text-sm text-muted-foreground">
                       {new Date(commitment.committed_at).toLocaleDateString()}
                     </td>
-                  </tr>
+                  </table>
                 ))}
               </tbody>
             </table>
@@ -149,6 +189,7 @@ export default async function MemberDashboardPage() {
         </div>
       )}
 
+      {/* Past Performance Section */}
       {history && history.length > 0 && (
         <div className="rounded-xl border overflow-hidden">
           <div className="border-b px-6 py-4">
@@ -200,6 +241,7 @@ export default async function MemberDashboardPage() {
         </div>
       )}
 
+      {/* Quick Actions */}
       <div className="flex gap-3 pt-2">
         <Link
           href="/member/sessions"
