@@ -44,6 +44,12 @@ export function Sidebar() {
           Trading Sessions
         </Link>
         <Link
+  href="/member/auto-commit"
+  className="block rounded-md px-4 py-2 hover:bg-muted"
+>
+  Auto-Commit Settings
+</Link>
+        <Link
   href="/member/commitments"
   className="block rounded-md px-4 py-2 hover:bg-muted"
 >

@@ -19,6 +19,7 @@ export default async function MemberDashboardPage() {
   let commitments;
   let history;
   let totalLocked = 0;
+  let autoCommitSettings = null;
   
   if (isImpersonating && impersonatedUserId) {
     // Fetch impersonated user's data directly (bypassing the auth session)
@@ -35,6 +36,14 @@ export default async function MemberDashboardPage() {
       .eq("user_id", impersonatedUserId)
       .single();
     wallet = walletData;
+    
+    // Get auto-commit settings for impersonated user
+    const { data: autoCommitData } = await supabase
+      .from("profiles")
+      .select("auto_commit_enabled, auto_commit_percentage, auto_commit_max_amount")
+      .eq("id", impersonatedUserId)
+      .single();
+    autoCommitSettings = autoCommitData;
     
     // Get commitments for impersonated user
     const { data: commitmentsData } = await supabase
@@ -104,6 +113,14 @@ export default async function MemberDashboardPage() {
     const historyResult = await getMySettledSessions();
     history = historyResult.history;
     totalLocked = commitments?.reduce((sum, c) => sum + (c.amount || 0), 0) || 0;
+    
+    // Get auto-commit settings for normal user
+    const { data: autoCommitData } = await supabase
+      .from("profiles")
+      .select("auto_commit_enabled, auto_commit_percentage, auto_commit_max_amount")
+      .eq("id", profile?.id)
+      .single();
+    autoCommitSettings = autoCommitData;
   }
   
   // Check withdrawal options (use profile from either impersonated or normal flow)
@@ -119,6 +136,10 @@ export default async function MemberDashboardPage() {
   const ngnBalance = await convertUSDtoNGN(wallet?.available_balance || 0);
   const ngnProfit = await convertUSDtoNGN(wallet?.profit_balance || 0);
   const ngnReferral = await convertUSDtoNGN(wallet?.referral_balance || 0);
+  
+  const isAutoCommitEnabled = autoCommitSettings?.auto_commit_enabled;
+  const autoCommitPercentage = autoCommitSettings?.auto_commit_percentage || 100;
+  const autoCommitMaxAmount = autoCommitSettings?.auto_commit_max_amount;
 
   return (
     <div className="space-y-6">
@@ -146,6 +167,38 @@ export default async function MemberDashboardPage() {
                 Exit Impersonation
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Auto-Commit Status Indicator */}
+      {!isImpersonating && (
+        <div className={`rounded-lg p-4 ${isAutoCommitEnabled ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50 border border-gray-200'}`}>
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <span className="text-xl">{isAutoCommitEnabled ? '🤖' : '💤'}</span>
+              <div>
+                <h3 className={`font-semibold ${isAutoCommitEnabled ? 'text-blue-800' : 'text-gray-600'}`}>
+                  {isAutoCommitEnabled ? 'Auto-Commit is Enabled' : 'Auto-Commit is Disabled'}
+                </h3>
+                {isAutoCommitEnabled ? (
+                  <p className="text-sm text-blue-600">
+                    {autoCommitPercentage}% of your available balance will be automatically committed to new trading sessions
+                    {autoCommitMaxAmount && ` (max $${autoCommitMaxAmount} per session)`}
+                  </p>
+                ) : (
+                  <p className="text-sm text-gray-500">
+                    Enable auto-commit to automatically participate in new trading sessions
+                  </p>
+                )}
+              </div>
+            </div>
+            <Link
+              href="/member/auto-commit"
+              className="px-3 py-1 text-sm rounded border border-gray-300 hover:bg-gray-100 transition-colors"
+            >
+              {isAutoCommitEnabled ? 'Manage' : 'Enable'}
+            </Link>
           </div>
         </div>
       )}
