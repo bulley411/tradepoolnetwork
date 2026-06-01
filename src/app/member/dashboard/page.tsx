@@ -8,18 +8,105 @@ import { headers } from "next/headers";
 
 export default async function MemberDashboardPage() {
   const supabase = await createClient();
-  const profile = await getCurrentProfile();
-  const wallet = await getCurrentWallet();
-  const { commitments } = await getMyActiveCommitments();
-  const { history } = await getMySettledSessions();
   
   // Check if impersonation is active from middleware header
   const headersList = await headers();
   const isImpersonating = headersList.get("x-impersonate-active") === "true";
   const impersonatedUserId = headersList.get("x-impersonate-user");
-
-  const totalLocked = commitments?.reduce((sum, c) => sum + (c.amount || 0), 0) || 0;
   
+  let profile;
+  let wallet;
+  let commitments;
+  let history;
+  let totalLocked = 0;
+  
+  if (isImpersonating && impersonatedUserId) {
+    // Fetch impersonated user's data directly (bypassing the auth session)
+    const { data: profileData } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", impersonatedUserId)
+      .single();
+    profile = profileData;
+    
+    const { data: walletData } = await supabase
+      .from("wallets")
+      .select("*")
+      .eq("user_id", impersonatedUserId)
+      .single();
+    wallet = walletData;
+    
+    // Get commitments for impersonated user
+    const { data: commitmentsData } = await supabase
+      .from("session_commitments")
+      .select(`
+        id,
+        amount,
+        contribution_pct,
+        committed_at,
+        status,
+        session_id,
+        sessions (
+          id,
+          title,
+          status,
+          total_committed
+        )
+      `)
+      .eq("user_id", impersonatedUserId)
+      .eq("status", "active")
+      .order("committed_at", { ascending: false });
+    
+    // Calculate contribution percentages dynamically
+    commitments = commitmentsData?.map(commitment => ({
+      ...commitment,
+      contribution_pct: commitment.sessions?.total_committed 
+        ? (commitment.amount / commitment.sessions.total_committed) * 100
+        : 0,
+      session: commitment.sessions
+    })) || [];
+    
+    totalLocked = commitments?.reduce((sum, c) => sum + (c.amount || 0), 0) || 0;
+    
+    // Get P&L history for impersonated user
+    const { data: historyData } = await supabase
+      .from("pnl_records")
+      .select(`
+        id,
+        contribution_amount,
+        contribution_pct,
+        gross_pnl_share,
+        platform_cut,
+        net_payout,
+        calculated_at,
+        session_id,
+        sessions (
+          id,
+          title,
+          total_profit_loss
+        )
+      `)
+      .eq("user_id", impersonatedUserId)
+      .order("calculated_at", { ascending: false })
+      .limit(20);
+    
+    history = historyData?.map(record => ({
+      ...record,
+      session: record.sessions
+    })) || [];
+    
+  } else {
+    // Normal user flow - use the service functions
+    profile = await getCurrentProfile();
+    wallet = await getCurrentWallet();
+    const commitmentsResult = await getMyActiveCommitments();
+    commitments = commitmentsResult.commitments;
+    const historyResult = await getMySettledSessions();
+    history = historyResult.history;
+    totalLocked = commitments?.reduce((sum, c) => sum + (c.amount || 0), 0) || 0;
+  }
+  
+  // Check withdrawal options (use profile from either impersonated or normal flow)
   const { data: withdrawalOptions } = await supabase
     .from('withdrawal_options')
     .select('id')
@@ -44,10 +131,10 @@ export default async function MemberDashboardPage() {
               <div>
                 <h3 className="font-semibold text-orange-800">Admin Impersonation Mode</h3>
                 <p className="text-sm text-orange-700">
-                  An administrator is viewing your account. Any actions taken will affect your real account.
+                  An administrator is viewing this account. Any actions taken will affect the real user's account.
                 </p>
                 <p className="text-xs text-orange-600 mt-1">
-                  Impersonated User ID: {impersonatedUserId?.slice(0, 8)}...
+                  User: {profile?.full_name || profile?.email} ({profile?.id?.slice(0, 8)}...)
                 </p>
               </div>
             </div>
@@ -64,7 +151,7 @@ export default async function MemberDashboardPage() {
       )}
 
       {/* Withdrawal Options Warning */}
-      {!hasWithdrawalOptions && (
+      {!hasWithdrawalOptions && !isImpersonating && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <div className="flex items-start gap-3">
             <span className="text-yellow-600 text-xl">⚠️</span>

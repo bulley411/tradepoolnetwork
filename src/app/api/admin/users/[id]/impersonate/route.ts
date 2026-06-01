@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin';
-import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
+import { randomBytes } from 'crypto';
 
 export async function POST(
   request: NextRequest,
@@ -9,75 +9,57 @@ export async function POST(
   try {
     const { id } = await params;
     
-    // Create admin client to verify the current user is an admin
     const adminSupabase = createAdminClient();
     
-    // Check if the target user exists
+    // Verify admin is authenticated
+    const { data: { user: adminUser } } = await adminSupabase.auth.getUser();
+    if (!adminUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    
+    // Check if target user exists and is active
     const { data: targetUser, error: userError } = await adminSupabase
       .from('profiles')
-      .select('id, email, role, is_active')
+      .select('id, email, full_name, is_active')
       .eq('id', id)
       .single();
     
     if (userError || !targetUser) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
     
-    // Check if user is active
     if (!targetUser.is_active) {
-      return NextResponse.json(
-        { error: 'Cannot impersonate a suspended user' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'Cannot impersonate a suspended user' }, { status: 403 });
     }
     
-    // Create a session for the target user using Supabase Auth admin API
-    // First, get the current session to know we're admin
-    const supabase = await createClient();
-    const { data: { session: adminSession } } = await supabase.auth.getSession();
+    // Generate a unique session token
+    const sessionToken = randomBytes(32).toString('hex');
     
-    if (!adminSession) {
-      return NextResponse.json(
-        { error: 'Admin not authenticated' },
-        { status: 401 }
-      );
+    // Create impersonation session
+    const { error: insertError } = await adminSupabase
+      .from('impersonation_sessions')
+      .insert({
+        admin_id: adminUser.id,
+        target_user_id: id,
+        session_token: sessionToken,
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      });
+    
+    if (insertError) {
+      console.error('Error creating impersonation session:', insertError);
+      return NextResponse.json({ error: 'Failed to create impersonation session' }, { status: 500 });
     }
     
-    // Get the target user's auth user (need to find their email)
-    // We'll use the admin client to sign in as the user
-    // Alternative: Set a cookie with the user's ID and let middleware handle it
-    
-    // For security, we'll create a custom impersonation token
-    // Store the original admin ID and the impersonated user ID in a secure cookie
-    
-    // Get the target user's email from auth.users
-    const { data: authUser, error: authError } = await adminSupabase
-      .from('auth.users')
-      .select('email')
-      .eq('id', id)
-      .single();
-    
-    // Create a response that sets an impersonation cookie
+    // Create response with impersonation cookie
     const response = NextResponse.redirect(new URL('/member/dashboard', request.url));
     
-    // Set cookie for impersonation (will be cleared on logout)
-    response.cookies.set('impersonate_user_id', id, {
+    // Set impersonation cookie (this will be used by middleware to determine which user to show)
+    response.cookies.set('impersonate_token', sessionToken, {
       httpOnly: true,
       secure: true,
       sameSite: 'lax',
       path: '/',
-      maxAge: 60 * 60 * 24, // 24 hours
-    });
-    
-    response.cookies.set('impersonate_admin_id', adminSession.user.id, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24,
+      maxAge: 24 * 60 * 60, // 24 hours
     });
     
     return response;

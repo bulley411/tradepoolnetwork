@@ -1,19 +1,23 @@
+import { createAdminClient } from '@/lib/supabase/admin';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
-  try {
-    const response = NextResponse.redirect(new URL('/admin/dashboard', request.url));
-    
-    // Clear impersonation cookies
-    response.cookies.delete('impersonate_user_id');
-    response.cookies.delete('impersonate_admin_id');
-    
-    return response;
-  } catch (error) {
-    console.error('Stop impersonation error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+  const response = NextResponse.redirect(new URL('/admin/dashboard', request.url));
+  
+  // Get the impersonation token to deactivate
+  const impersonateToken = request.cookies.get('impersonate_token')?.value;
+  
+  if (impersonateToken) {
+    const supabase = createAdminClient();
+    // Deactivate the impersonation session
+    await supabase
+      .from('impersonation_sessions')
+      .update({ is_active: false })
+      .eq('session_token', impersonateToken);
   }
+  
+  // Clear impersonation cookies
+  response.cookies.delete('impersonate_token');
+  
+  return response;
 }
