@@ -3,20 +3,19 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import Link from 'next/link';
 
 export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
-  async function handleSignIn(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    
-    const formData = new FormData(e.currentTarget);
-    const email = formData.get('email') as string;
-    const password = formData.get('password') as string;
     
     const supabase = createClient();
     
@@ -74,6 +73,8 @@ export default function LoginPage() {
                 type="email"
                 autoComplete="email"
                 required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
                 placeholder="Email address"
               />
@@ -88,6 +89,8 @@ export default function LoginPage() {
                 type="password"
                 autoComplete="current-password"
                 required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
                 placeholder="Password"
               />
@@ -99,6 +102,17 @@ export default function LoginPage() {
               {error}
             </div>
           )}
+          
+          <div className="flex items-center justify-between">
+            <div className="text-sm">
+              <Link
+                href="/forgot-password"
+                className="font-medium text-blue-600 hover:text-blue-500"
+              >
+                Forgot your password?
+              </Link>
+            </div>
+          </div>
           
           <div>
             <button
@@ -112,9 +126,9 @@ export default function LoginPage() {
         </form>
         
         <div className="text-center">
-          <a href="/register" className="text-sm text-blue-600 hover:text-blue-500">
+          <Link href="/register" className="text-sm text-blue-600 hover:text-blue-500">
             Don't have an account? Sign up
-          </a>
+          </Link>
         </div>
       </div>
     </div>
