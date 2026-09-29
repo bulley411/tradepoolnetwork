@@ -6,6 +6,8 @@ import { createClient } from "@/lib/supabase/server";
 
 import { createAdminClient } from '@/lib/supabase/admin';
 
+import { sendTradeDistributionEmails } from '@/services/email-service';
+
 async function requireAdminUser() {
   const supabase = await createClient();
 
@@ -317,113 +319,9 @@ export async function startTrading(sessionId: string) {
   return { success: true };
 }
 
-export async function xendTradingAndDistribute(
-  sessionId: string,
-  totalProfitLoss: number
-) {
-  const adminSupabase = createAdminClient();
-  
-  // Get session
-  const { data: session } = await adminSupabase
-    .from('sessions')
-    .select('id, total_committed, title')
-    .eq('id', sessionId)
-    .single();
-  
-  if (!session) return { error: 'Session not found' };
-  
-  // Get commitments
-  const { data: commitments } = await adminSupabase
-    .from('session_commitments')
-    .select('id, user_id, amount, contribution_pct')
-    .eq('session_id', sessionId)
-    .eq('status', 'active');
-  
-  if (!commitments || commitments.length === 0) {
-    return { error: 'No commitments found' };
-  }
-  
-  const platformSplit = 0.5;
-  
-  for (const commitment of commitments) {
-    const userShareOfPool = (commitment.contribution_pct || 0) / 100;
-    const grossPnlShare = totalProfitLoss * userShareOfPool;
-    const platformCut = grossPnlShare * platformSplit;
-    const netPayout = grossPnlShare - platformCut;
-    
-    // Create P&L record
-    await adminSupabase
-      .from('pnl_records')
-      .insert({
-        session_id: sessionId,
-        user_id: commitment.user_id,
-        commitment_id: commitment.id,
-        contribution_amount: commitment.amount,
-        contribution_pct: commitment.contribution_pct || 0,
-        gross_pnl_share: grossPnlShare,
-        platform_cut: platformCut,
-        net_payout: netPayout,
-        status: 'paid',
-        paid_at: new Date().toISOString(),
-      });
-    
-    if (netPayout > 0) {
-      // PROFIT: Unlock principal + add profit share
-      // First, unlock the full principal
-      await adminSupabase.rpc('unlock_user_funds', {
-        p_user_id: commitment.user_id,
-        p_amount: commitment.amount,
-      });
-      
-      // Then add the profit share to available and profit balance
-      await adminSupabase.rpc('add_profit_to_wallet', {
-        p_user_id: commitment.user_id,
-        p_amount: netPayout,
-      });
-      
-    } else if (netPayout < 0) {
-      // LOSS: Only return remaining principal
-      const remainingAmount = commitment.amount + netPayout; // netPayout is negative
-      if (remainingAmount > 0) {
-        await adminSupabase.rpc('unlock_user_funds', {
-          p_user_id: commitment.user_id,
-          p_amount: remainingAmount,
-        });
-      }
-      // No profit added
-      
-    } else {
-      // BREAK EVEN: Return full principal
-      await adminSupabase.rpc('unlock_user_funds', {
-        p_user_id: commitment.user_id,
-        p_amount: commitment.amount,
-      });
-    }
-    
-    // Mark commitment as settled
-    await adminSupabase
-      .from('session_commitments')
-      .update({ status: 'settled' })
-      .eq('id', commitment.id);
-  }
-  
-  // Update session
-  const { error } = await adminSupabase
-    .from('sessions')
-    .update({
-      status: 'settlement',
-      trading_ended_at: new Date().toISOString(),
-      total_profit_loss: totalProfitLoss,
-    })
-    .eq('id', sessionId);
-  
-  if (error) return { error: error.message };
-  
-  revalidatePath('/admin/sessions');
-  return { success: true };
-}
 
-export async function endTradingAndDistribute(
+//old function without email notification implementation
+export async function xendTradingAndDistribute(
   sessionId: string,
   totalProfitLoss: number
 ) {
@@ -565,6 +463,168 @@ export async function endTradingAndDistribute(
     .eq('id', sessionId);
   
   if (error) return { error: error.message };
+  
+  revalidatePath('/admin/sessions');
+  return { success: true };
+}
+
+
+//this function has email notification implementation
+export async function endTradingAndDistribute(
+  sessionId: string,
+  totalProfitLoss: number
+) {
+  const adminSupabase = createAdminClient();
+  
+  // Get session
+  const { data: session } = await adminSupabase
+    .from('sessions')
+    .select('id, total_committed, title')
+    .eq('id', sessionId)
+    .single();
+  
+  if (!session) return { error: 'Session not found' };
+  
+  // Get commitments
+  const { data: commitments } = await adminSupabase
+    .from('session_commitments')
+    .select('id, user_id, amount, contribution_pct')
+    .eq('session_id', sessionId)
+    .eq('status', 'active');
+  
+  if (!commitments || commitments.length === 0) {
+    return { error: 'No commitments found' };
+  }
+  
+  const platformSplit = 0.5;
+  const referralCommissionRate = 0.05; // 5%
+  let platformTotalCut = 0;
+  
+  for (const commitment of commitments) {
+    const userShareOfPool = (commitment.contribution_pct || 0) / 100;
+    const grossPnlShare = totalProfitLoss * userShareOfPool;
+    const platformCut = grossPnlShare * platformSplit;
+    const netPayout = grossPnlShare - platformCut;
+    
+    platformTotalCut += platformCut;
+    
+    // Create P&L record
+    const { data: pnlRecord } = await adminSupabase
+      .from('pnl_records')
+      .insert({
+        session_id: sessionId,
+        user_id: commitment.user_id,
+        commitment_id: commitment.id,
+        contribution_amount: commitment.amount,
+        contribution_pct: commitment.contribution_pct || 0,
+        gross_pnl_share: grossPnlShare,
+        platform_cut: platformCut,
+        net_payout: netPayout,
+        status: 'paid',
+        paid_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+    
+    if (netPayout > 0) {
+      // PROFIT: Unlock principal + add profit share
+      // First, unlock the full principal
+      await adminSupabase.rpc('unlock_user_funds', {
+        p_user_id: commitment.user_id,
+        p_amount: commitment.amount,
+      });
+      
+      // Then add the profit share to available and profit balance
+      await adminSupabase.rpc('add_profit_to_wallet', {
+        p_user_id: commitment.user_id,
+        p_amount: netPayout,
+      });
+      
+   } else if (netPayout < 0) {
+  // LOSS: Remove full locked amount, return only remaining principal
+  const remainingAmount = commitment.amount + netPayout; // netPayout is negative
+  
+  await adminSupabase.rpc('settle_loss_commitment', {
+    p_user_id: commitment.user_id,
+    p_locked_amount: commitment.amount,
+    p_remaining_amount: Math.max(remainingAmount, 0),
+  });
+  
+} else {
+      // BREAK EVEN: Return full principal
+      await adminSupabase.rpc('unlock_user_funds', {
+        p_user_id: commitment.user_id,
+        p_amount: commitment.amount,
+      });
+    }
+    
+    // ============================================================
+    // REFERRAL COMMISSION (5% of platform share)
+    // ============================================================
+    if (platformCut > 0 && pnlRecord) {
+      // Get the referrer (who referred this trader)
+      const { data: userProfile } = await adminSupabase
+        .from('profiles')
+        .select('referred_by')
+        .eq('id', commitment.user_id)
+        .single();
+      
+      if (userProfile?.referred_by) {
+        const referrerId = userProfile.referred_by;
+        const commissionAmount = platformCut * referralCommissionRate;
+        
+        if (commissionAmount > 0) {
+          // Record commission
+          await adminSupabase
+            .from('referral_commissions')
+            .insert({
+              referrer_id: referrerId,
+              user_id: commitment.user_id,
+              pnl_record_id: pnlRecord.id,
+              session_id: sessionId,
+              commission_amount: commissionAmount,
+              status: 'paid',
+              paid_at: new Date().toISOString(),
+            });
+          
+          // Add commission to referrer's wallet
+          await adminSupabase.rpc('add_referral_commission', {
+            p_user_id: referrerId,
+            p_amount: commissionAmount,
+          });
+        }
+      }
+    }
+    
+    // Mark commitment as settled
+    await adminSupabase
+      .from('session_commitments')
+      .update({ status: 'settled' })
+      .eq('id', commitment.id);
+  }
+  
+  // Update session
+  const { error } = await adminSupabase
+    .from('sessions')
+    .update({
+      status: 'settlement',
+      trading_ended_at: new Date().toISOString(),
+      total_profit_loss: totalProfitLoss,
+    })
+    .eq('id', sessionId);
+  
+  if (error) return { error: error.message };
+  
+  // ============================================================
+  // SEND EMAIL NOTIFICATIONS TO ALL MEMBERS
+  // ============================================================
+  try {
+    await sendTradeDistributionEmails(sessionId, totalProfitLoss, platformTotalCut);
+    console.log('✅ Trade distribution emails sent successfully');
+  } catch (emailError) {
+    console.error('❌ Failed to send distribution emails:', emailError);
+    // Don't fail the transaction if emails fail
+  }
   
   revalidatePath('/admin/sessions');
   return { success: true };
