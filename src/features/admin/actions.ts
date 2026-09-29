@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 
 import { createAdminClient } from '@/lib/supabase/admin';
 
-import { sendTradeDistributionEmails } from '@/services/email-service';
+//import { sendTradeDistributionEmails } from '@/services/email-service';
 
 async function requireAdminUser() {
   const supabase = await createClient();
@@ -618,13 +618,13 @@ export async function endTradingAndDistribute(
   // ============================================================
   // SEND EMAIL NOTIFICATIONS TO ALL MEMBERS
   // ============================================================
-  try {
-    await sendTradeDistributionEmails(sessionId, totalProfitLoss, platformTotalCut);
-    console.log('✅ Trade distribution emails sent successfully');
-  } catch (emailError) {
-    console.error('❌ Failed to send distribution emails:', emailError);
-    // Don't fail the transaction if emails fail
-  }
+  // try {
+  //   await sendTradeDistributionEmails(sessionId, totalProfitLoss, platformTotalCut);
+  //   console.log('✅ Trade distribution emails sent successfully');
+  // } catch (emailError) {
+  //   console.error('❌ Failed to send distribution emails:', emailError);
+  //   // Don't fail the transaction if emails fail
+  // }
   
   revalidatePath('/admin/sessions');
   return { success: true };
